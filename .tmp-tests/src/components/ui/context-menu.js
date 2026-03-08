@@ -1,0 +1,31 @@
+import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+import * as ContextMenuPrimitive from '@radix-ui/react-context-menu';
+import { Check, ChevronRight, Circle } from 'lucide-react';
+import * as React from 'react';
+import { cn } from '../../lib/utils.js';
+const ContextMenu = ContextMenuPrimitive.Root;
+const ContextMenuTrigger = ContextMenuPrimitive.Trigger;
+const ContextMenuGroup = ContextMenuPrimitive.Group;
+const ContextMenuPortal = ContextMenuPrimitive.Portal;
+const ContextMenuSub = ContextMenuPrimitive.Sub;
+const ContextMenuRadioGroup = ContextMenuPrimitive.RadioGroup;
+const ContextMenuSubTrigger = React.forwardRef(({ className, inset, children, ...props }, ref) => (_jsxs(ContextMenuPrimitive.SubTrigger, { ref: ref, className: cn('flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent data-[state=open]:bg-accent', inset && 'pl-8', className), ...props, children: [children, _jsx(ChevronRight, { className: "ml-auto h-4 w-4" })] })));
+ContextMenuSubTrigger.displayName = ContextMenuPrimitive.SubTrigger.displayName;
+const ContextMenuSubContent = React.forwardRef(({ className, ...props }, ref) => (_jsx(ContextMenuPrimitive.SubContent, { ref: ref, className: cn('z-50 min-w-[10rem] overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md', className), ...props })));
+ContextMenuSubContent.displayName = ContextMenuPrimitive.SubContent.displayName;
+const ContextMenuContent = React.forwardRef(({ className, ...props }, ref) => (_jsx(ContextMenuPrimitive.Portal, { children: _jsx(ContextMenuPrimitive.Content, { ref: ref, className: cn('z-50 min-w-[12rem] overflow-hidden rounded-md border border-border bg-popover p-1 text-popover-foreground shadow-md', className), ...props }) })));
+ContextMenuContent.displayName = ContextMenuPrimitive.Content.displayName;
+const ContextMenuItem = React.forwardRef(({ className, inset, ...props }, ref) => (_jsx(ContextMenuPrimitive.Item, { ref: ref, className: cn('relative flex cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none transition-colors focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-50', inset && 'pl-8', className), ...props })));
+ContextMenuItem.displayName = ContextMenuPrimitive.Item.displayName;
+const ContextMenuCheckboxItem = React.forwardRef(({ className, children, checked, ...props }, ref) => (_jsxs(ContextMenuPrimitive.CheckboxItem, { ref: ref, className: cn('relative flex cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none transition-colors focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-50', className), checked: checked, ...props, children: [_jsx("span", { className: "absolute left-2 flex h-3.5 w-3.5 items-center justify-center", children: _jsx(ContextMenuPrimitive.ItemIndicator, { children: _jsx(Check, { className: "h-4 w-4" }) }) }), children] })));
+ContextMenuCheckboxItem.displayName = ContextMenuPrimitive.CheckboxItem.displayName;
+const ContextMenuRadioItem = React.forwardRef(({ className, children, ...props }, ref) => (_jsxs(ContextMenuPrimitive.RadioItem, { ref: ref, className: cn('relative flex cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none transition-colors focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-50', className), ...props, children: [_jsx("span", { className: "absolute left-2 flex h-3.5 w-3.5 items-center justify-center", children: _jsx(ContextMenuPrimitive.ItemIndicator, { children: _jsx(Circle, { className: "h-2 w-2 fill-current" }) }) }), children] })));
+ContextMenuRadioItem.displayName = ContextMenuPrimitive.RadioItem.displayName;
+const ContextMenuLabel = React.forwardRef(({ className, inset, ...props }, ref) => (_jsx(ContextMenuPrimitive.Label, { ref: ref, className: cn('px-2 py-1.5 text-sm font-semibold', inset && 'pl-8', className), ...props })));
+ContextMenuLabel.displayName = ContextMenuPrimitive.Label.displayName;
+const ContextMenuSeparator = React.forwardRef(({ className, ...props }, ref) => (_jsx(ContextMenuPrimitive.Separator, { ref: ref, className: cn('-mx-1 my-1 h-px bg-border', className), ...props })));
+ContextMenuSeparator.displayName = ContextMenuPrimitive.Separator.displayName;
+function ContextMenuShortcut({ className, ...props }) {
+    return _jsx("span", { className: cn('ml-auto text-xs tracking-widest opacity-60', className), ...props });
+}
+export { ContextMenu, ContextMenuCheckboxItem, ContextMenuContent, ContextMenuGroup, ContextMenuItem, ContextMenuLabel, ContextMenuPortal, ContextMenuRadioGroup, ContextMenuRadioItem, ContextMenuSeparator, ContextMenuShortcut, ContextMenuSub, ContextMenuSubContent, ContextMenuSubTrigger, ContextMenuTrigger, };
