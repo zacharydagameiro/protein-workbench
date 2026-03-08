@@ -1,5 +1,6 @@
 import { Command, Compass, MoreHorizontal, Search, SunMoon, Trash2 } from 'lucide-react';
 import type { Protein, WorkspaceTab } from '../types/structure.js';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from './ui/accordion.js';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -14,7 +15,6 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
-  SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuAction,
@@ -86,7 +86,7 @@ function ProteinShortcutRow({
         title={`${protein.name ?? protein.metadata.displayTitle} (${protein.metadata.pdbId ?? protein.id.toUpperCase()})`}
       >
         <span className="text-base leading-none">🧬</span>
-        <span className="block max-w-[12.5rem] min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+        <span className="block max-w-[10.5rem] min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
           {protein.name ?? protein.metadata.displayTitle}
         </span>
       </SidebarMenuButton>
@@ -220,97 +220,120 @@ export function AppSidebar({
       <SidebarContent>
         <ScrollArea className="h-full pr-1">
           <div className="space-y-6 pb-4">
-            <SidebarGroup>
-              <SidebarGroupLabel>Favorites</SidebarGroupLabel>
-              <SidebarGroupContent>
-                {pinnedProteins.length === 0 ? (
-                  <div className="px-2 text-sm leading-6 text-sidebar-foreground/55">
-                    Pin proteins from Protein Bank to keep them here.
-                  </div>
-                ) : (
-                  <SidebarMenu>
-                    {pinnedProteins.map((protein) => (
-                      <ProteinShortcutRow
-                        key={`favorite-${protein.id}`}
-                        entryId={`favorite:${protein.id}`}
-                        section="favorite"
-                        protein={protein}
-                        isFavorite={favoriteIds.has(protein.id)}
-                        isInInventory={inventoryIds.has(protein.id)}
-                        selectedSidebarEntryId={selectedSidebarEntryId}
-                        onSelect={handleSelectProtein}
-                        onTogglePinned={onTogglePinned}
-                        onToggleInventory={onToggleInventory}
-                        onRenameProtein={onRenameProtein}
-                        onRemoveHistory={onRemoveHistory}
-                      />
-                    ))}
-                  </SidebarMenu>
-                )}
-              </SidebarGroupContent>
-            </SidebarGroup>
+            <Accordion type="multiple" defaultValue={['favorites', 'recent', 'inventory']} className="w-full space-y-3">
+              <SidebarGroup className="w-full min-w-0 overflow-hidden rounded-xl border border-sidebar-border/55 bg-sidebar-accent/18 px-2">
+                <AccordionItem value="favorites" className="w-full min-w-0 border-none">
+                  <AccordionTrigger className="px-1 py-3 text-xs font-medium tracking-[0.08em] text-sidebar-foreground/68 hover:no-underline">
+                    Favorites
+                  </AccordionTrigger>
+                  <AccordionContent className="w-full min-w-0 pb-2">
+                    <SidebarGroupContent>
+                      {pinnedProteins.length === 0 ? (
+                        <div className="px-2 text-sm leading-6 text-sidebar-foreground/55">
+                          Pin proteins from Protein Bank to keep them here.
+                        </div>
+                      ) : (
+                        <SidebarMenu>
+                          {pinnedProteins.map((protein) => (
+                            <ProteinShortcutRow
+                              key={`favorite-${protein.id}`}
+                              entryId={`favorite:${protein.id}`}
+                              section="favorite"
+                              protein={protein}
+                              isFavorite={favoriteIds.has(protein.id)}
+                              isInInventory={inventoryIds.has(protein.id)}
+                              selectedSidebarEntryId={selectedSidebarEntryId}
+                              onSelect={handleSelectProtein}
+                              onTogglePinned={onTogglePinned}
+                              onToggleInventory={onToggleInventory}
+                              onRenameProtein={onRenameProtein}
+                              onRemoveHistory={onRemoveHistory}
+                            />
+                          ))}
+                        </SidebarMenu>
+                      )}
+                    </SidebarGroupContent>
+                  </AccordionContent>
+                </AccordionItem>
+              </SidebarGroup>
 
-            <SidebarGroup>
-              <SidebarGroupLabel>Recent</SidebarGroupLabel>
-              <SidebarGroupContent>
-                {historyProteins.length === 0 ? (
-                  <div className="px-2 text-sm leading-6 text-sidebar-foreground/55">Viewed proteins will appear here.</div>
-                ) : (
-                  <SidebarMenu>
-                    {historyProteins.map((protein) => (
-                      <ProteinShortcutRow
-                        key={`history-${protein.id}`}
-                        entryId={`history:${protein.id}`}
-                        section="history"
-                        protein={protein}
-                        isFavorite={favoriteIds.has(protein.id)}
-                        isInInventory={inventoryIds.has(protein.id)}
-                        selectedSidebarEntryId={selectedSidebarEntryId}
-                        onSelect={handleSelectProtein}
-                        onTogglePinned={onTogglePinned}
-                        onToggleInventory={onToggleInventory}
-                        onRenameProtein={onRenameProtein}
-                        onRemoveHistory={onRemoveHistory}
-                      />
-                    ))}
-                    <SidebarMenuItem>
-                      <SidebarMenuButton onClick={() => runNav(onClearHistory)} className="text-sidebar-foreground/68">
-                        <Trash2 className="h-4 w-4" />
-                        <span>Clear history</span>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  </SidebarMenu>
-                )}
-              </SidebarGroupContent>
-            </SidebarGroup>
+              <SidebarGroup className="w-full min-w-0 overflow-hidden rounded-xl border border-sidebar-border/55 bg-sidebar-accent/18 px-2">
+                <AccordionItem value="recent" className="w-full min-w-0 border-none">
+                  <AccordionTrigger className="px-1 py-3 text-xs font-medium tracking-[0.08em] text-sidebar-foreground/68 hover:no-underline">
+                    Recent
+                  </AccordionTrigger>
+                  <AccordionContent className="w-full min-w-0 pb-2">
+                    <SidebarGroupContent>
+                      {historyProteins.length === 0 ? (
+                        <div className="px-2 text-sm leading-6 text-sidebar-foreground/55">Viewed proteins will appear here.</div>
+                      ) : (
+                        <SidebarMenu>
+                          {historyProteins.map((protein) => (
+                            <ProteinShortcutRow
+                              key={`history-${protein.id}`}
+                              entryId={`history:${protein.id}`}
+                              section="history"
+                              protein={protein}
+                              isFavorite={favoriteIds.has(protein.id)}
+                              isInInventory={inventoryIds.has(protein.id)}
+                              selectedSidebarEntryId={selectedSidebarEntryId}
+                              onSelect={handleSelectProtein}
+                              onTogglePinned={onTogglePinned}
+                              onToggleInventory={onToggleInventory}
+                              onRenameProtein={onRenameProtein}
+                              onRemoveHistory={onRemoveHistory}
+                            />
+                          ))}
+                          <SidebarMenuItem>
+                            <SidebarMenuButton
+                              onClick={() => runNav(onClearHistory)}
+                              className="text-rose-200/88 hover:bg-rose-500/12 hover:text-rose-100"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                              <span>Clear history</span>
+                            </SidebarMenuButton>
+                          </SidebarMenuItem>
+                        </SidebarMenu>
+                      )}
+                    </SidebarGroupContent>
+                  </AccordionContent>
+                </AccordionItem>
+              </SidebarGroup>
 
-            <SidebarGroup>
-              <SidebarGroupLabel>Inventory</SidebarGroupLabel>
-              <SidebarGroupContent>
-                {inventoryProteins.length === 0 ? (
-                  <div className="px-2 text-sm leading-6 text-sidebar-foreground/55">Saved inventory proteins will appear here.</div>
-                ) : (
-                  <SidebarMenu>
-                    {inventoryProteins.map((protein) => (
-                      <ProteinShortcutRow
-                        key={`inventory-${protein.id}`}
-                        entryId={`inventory:${protein.id}`}
-                        section="inventory"
-                        protein={protein}
-                        isFavorite={favoriteIds.has(protein.id)}
-                        isInInventory={inventoryIds.has(protein.id)}
-                        selectedSidebarEntryId={selectedSidebarEntryId}
-                        onSelect={handleSelectProtein}
-                        onTogglePinned={onTogglePinned}
-                        onToggleInventory={onToggleInventory}
-                        onRenameProtein={onRenameProtein}
-                        onRemoveHistory={onRemoveHistory}
-                      />
-                    ))}
-                  </SidebarMenu>
-                )}
-              </SidebarGroupContent>
-            </SidebarGroup>
+              <SidebarGroup className="w-full min-w-0 overflow-hidden rounded-xl border border-sidebar-border/55 bg-sidebar-accent/18 px-2">
+                <AccordionItem value="inventory" className="w-full min-w-0 border-none">
+                  <AccordionTrigger className="px-1 py-3 text-xs font-medium tracking-[0.08em] text-sidebar-foreground/68 hover:no-underline">
+                    Inventory
+                  </AccordionTrigger>
+                  <AccordionContent className="w-full min-w-0 pb-2">
+                    <SidebarGroupContent>
+                      {inventoryProteins.length === 0 ? (
+                        <div className="px-2 text-sm leading-6 text-sidebar-foreground/55">Saved inventory proteins will appear here.</div>
+                      ) : (
+                        <SidebarMenu>
+                          {inventoryProteins.map((protein) => (
+                            <ProteinShortcutRow
+                              key={`inventory-${protein.id}`}
+                              entryId={`inventory:${protein.id}`}
+                              section="inventory"
+                              protein={protein}
+                              isFavorite={favoriteIds.has(protein.id)}
+                              isInInventory={inventoryIds.has(protein.id)}
+                              selectedSidebarEntryId={selectedSidebarEntryId}
+                              onSelect={handleSelectProtein}
+                              onTogglePinned={onTogglePinned}
+                              onToggleInventory={onToggleInventory}
+                              onRenameProtein={onRenameProtein}
+                              onRemoveHistory={onRemoveHistory}
+                            />
+                          ))}
+                        </SidebarMenu>
+                      )}
+                    </SidebarGroupContent>
+                  </AccordionContent>
+                </AccordionItem>
+              </SidebarGroup>
+            </Accordion>
           </div>
         </ScrollArea>
       </SidebarContent>
