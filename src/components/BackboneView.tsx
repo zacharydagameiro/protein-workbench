@@ -4,11 +4,12 @@ import type { Atom, Protein, StructureLevel, ViewerSelection, ViewerTarget } fro
 
 interface BackboneViewProps {
   protein: Protein;
-  visibleChainIds: Set<string>;
+  emphasizedChainIds: Set<string>;
   structureLevel: StructureLevel;
   activeTarget?: ViewerTarget | null;
   selectedResidue?: ViewerSelection | null;
   hoveredResidue?: ViewerSelection | null;
+  hoverEnabled?: boolean;
   onResidueHover?: (residue: ViewerSelection | null) => void;
   onResidueSelect?: (residue: ViewerSelection) => void;
 }
@@ -69,17 +70,18 @@ const residueMatchesTarget = (protein: Protein, atom: Atom, structureLevel: Stru
 
 export default function BackboneView({
   protein,
-  visibleChainIds,
+  emphasizedChainIds,
   structureLevel,
   activeTarget,
   selectedResidue,
   hoveredResidue,
+  hoverEnabled = true,
   onResidueHover,
   onResidueSelect,
 }: BackboneViewProps) {
   const backboneAtoms = useMemo(
-    () => sortBackboneAtoms(protein.backboneAtoms.filter((atom) => visibleChainIds.has(atom.chainId ?? 'A'))),
-    [protein.backboneAtoms, visibleChainIds],
+    () => sortBackboneAtoms(protein.backboneAtoms),
+    [protein.backboneAtoms],
   );
 
   return (
@@ -89,9 +91,10 @@ export default function BackboneView({
         const hovered = Boolean(hoveredResidue && residueIdForAtom(atom) === hoveredResidue.residueId);
         const targeted = residueMatchesTarget(protein, atom, structureLevel, activeTarget);
         const emphasizeChains = activeTarget?.kind === 'chain' || structureLevel === 'quaternary';
+        const isEmphasizedChain = emphasizedChainIds.has(atom.chainId ?? 'A');
         const baseColor = emphasizeChains ? chainColor(atom.chainId ?? 'A') : '#7dd3fc';
         const color = selected ? '#facc15' : hovered ? '#fb923c' : targeted ? '#67e8f9' : baseColor;
-        const opacity = selected || hovered || targeted ? 1 : activeTarget ? 0.22 : 0.88;
+        const opacity = selected || hovered || targeted ? 1 : isEmphasizedChain ? (activeTarget ? 0.22 : 0.88) : 0.08;
         const scale = selected ? 1.55 : hovered ? 1.28 : targeted ? 1.16 : 1;
         const selection: ViewerSelection = {
           residueId: residueIdForAtom(atom),
@@ -113,8 +116,16 @@ export default function BackboneView({
               position={[atom.x, atom.y, atom.z]}
               scale={scale}
               userData={{ atom }}
-              onPointerEnter={() => onResidueHover?.(selection)}
-              onPointerLeave={() => onResidueHover?.(null)}
+              onPointerEnter={() => {
+                if (hoverEnabled) {
+                  onResidueHover?.(selection);
+                }
+              }}
+              onPointerLeave={() => {
+                if (hoverEnabled) {
+                  onResidueHover?.(null);
+                }
+              }}
               onClick={(event: ThreeEvent<MouseEvent>) => {
                 event.stopPropagation();
                 onResidueSelect?.(selection);

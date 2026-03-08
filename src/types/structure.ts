@@ -26,18 +26,15 @@ export interface SequencePanelState {
 
 export type ViewerMode = 'atoms' | 'backbone' | 'cartoon';
 
-export type ViewerUnitSystem = 'angstrom' | 'nanometer';
-
 export interface ViewerSceneSettings {
-  unitSystem: ViewerUnitSystem;
   showGrid: boolean;
   showFog: boolean;
   lightingPreset: 'scientific';
 }
 
-export type WorkspaceTab = 'explorer' | 'protein-bank';
+export type WorkspaceTab = 'explorer' | 'protein-bank' | 'inventory';
 
-export type ProteinBankCollection = 'starter' | 'pinned' | 'history' | 'search';
+export type ProteinBankCollection = 'starter' | 'inventory' | 'pinned' | 'search';
 
 export type ProteinBankCollectionFilter = 'all' | ProteinBankCollection;
 
@@ -61,7 +58,7 @@ export type ProteinBankTableColumnId =
   | 'actions';
 
 export interface ProteinBankRowAction {
-  id: 'open' | 'toggle-pinned';
+  id: 'open' | 'toggle-pinned' | 'add-to-inventory';
   label: string;
 }
 

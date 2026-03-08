@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { skipToken } from '@reduxjs/toolkit/query';
 import { AppCommandPalette } from './components/AppCommandPalette.js';
 import { AppSidebar } from './components/AppSidebar.js';
 import { ExplorerSidepanel } from './components/ExplorerSidepanel.js';
@@ -9,10 +10,16 @@ import {
   clearLibrarySection,
   getLibraryState,
   removeHistoryItem,
+  renameHistoryItem,
   saveHistoryItem,
-  togglePinnedProtein,
 } from './services/libraryService.js';
+import { ensureAnonymousSession } from './services/firebaseUserLibraryService.js';
 import { loadProteinById } from './services/pdbService.js';
+import {
+  useGetUserProteinCollectionQuery,
+  useRemoveUserProteinMutation,
+  useSaveUserProteinMutation,
+} from './store/firestoreApi.js';
 import { getTargetedResidue } from './utils/explorerContent.js';
 import {
   buildProteinBankRows,
@@ -34,24 +41,21 @@ import type {
   WorkspaceTab,
 } from './types/structure.js';
 import { Badge } from './components/ui/badge.js';
-import { Button } from './components/ui/button.js';
-import { Combobox, type ComboboxOption } from './components/ui/combobox.js';
 import { Card, CardContent } from './components/ui/card.js';
 import {
-  DropdownMenuCheckboxItem,
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
-} from './components/ui/dropdown-menu.js';
-import { HoverCard, HoverCardContent, HoverCardTrigger } from './components/ui/hover-card.js';
+  Menubar,
+  MenubarCheckboxItem,
+  MenubarContent,
+  MenubarItem,
+  MenubarMenu,
+  MenubarRadioGroup,
+  MenubarRadioItem,
+  MenubarSeparator,
+  MenubarSub,
+  MenubarSubContent,
+  MenubarSubTrigger,
+  MenubarTrigger,
+} from './components/ui/menubar.js';
 import { SidebarInset, SidebarProvider, SidebarTrigger } from './components/ui/sidebar.js';
 
 type ThemeMode = 'dark' | 'light';
@@ -113,28 +117,30 @@ const defaultSequenceState = (): SequencePanelState => ({
 });
 
 const defaultViewerSceneSettings = (): ViewerSceneSettings => ({
-  unitSystem: 'angstrom',
   showGrid: true,
   showFog: true,
   lightingPreset: 'scientific',
 });
 
 export default function App({ initialWorkspace = 'explorer', initialTheme = 'dark', render3D = true }: AppProps) {
-  const initialLibrary = useMemo(() => getLibraryState(), []);
+  const initialHistory = useMemo(() => getLibraryState().history, []);
   const [workspace, setWorkspace] = useState<WorkspaceTab>(initialWorkspace);
   const [theme, setTheme] = useState<ThemeMode>(() => getInitialTheme(initialTheme));
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(() => getInitialSidebarState());
   const [commandOpen, setCommandOpen] = useState(false);
   const [searchResults, setSearchResults] = useState<Protein[]>([]);
-  const [pinnedProteins, setPinnedProteins] = useState<Protein[]>(initialLibrary.pinned);
-  const [historyProteins, setHistoryProteins] = useState<Protein[]>(initialLibrary.history);
-  const [selectedId, setSelectedId] = useState<string | null>(
-    initialLibrary.history[0]?.id ?? initialLibrary.pinned[0]?.id ?? starterProteins[0]?.id ?? null,
+  const [firebaseUserId, setFirebaseUserId] = useState<string | null>(null);
+  const [historyProteins, setHistoryProteins] = useState<Protein[]>(initialHistory);
+  const [selectedSidebarEntryId, setSelectedSidebarEntryId] = useState<string | null>(
+    initialHistory[0] ? `history:${initialHistory[0].id}` : null,
   );
-  const [viewerMode, setViewerMode] = useState<ViewerMode>('backbone');
+  const [selectedId, setSelectedId] = useState<string | null>(
+    initialHistory[0]?.id ?? starterProteins[0]?.id ?? null,
+  );
+  const [viewerMode, setViewerMode] = useState<ViewerMode>('cartoon');
   const [showAxes, setShowAxes] = useState(false);
   const [fitViewNonce, setFitViewNonce] = useState(0);
-  const [chainFilter, setChainFilter] = useState('all');
+  const [chainFilter, setChainFilter] = useState<string[]>([]);
   const [selectedResidue, setSelectedResidue] = useState<ViewerSelection | null>(null);
   const [hoveredResidue, setHoveredResidue] = useState<ViewerSelection | null>(null);
   const [activeTarget, setActiveTarget] = useState<ViewerTarget | null>(null);
@@ -145,6 +151,12 @@ export default function App({ initialWorkspace = 'explorer', initialTheme = 'dar
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [bankFilters, setBankFilters] = useState<ProteinBankFilterState>(() => defaultProteinBankFilters());
   const [bankSortKey, setBankSortKey] = useState<ProteinBankSortKey>('title');
+  const favoritesQueryArg = firebaseUserId ? { userId: firebaseUserId, collectionName: 'favorites' as const } : skipToken;
+  const inventoryQueryArg = firebaseUserId ? { userId: firebaseUserId, collectionName: 'inventory' as const } : skipToken;
+  const { data: pinnedProteins = [] } = useGetUserProteinCollectionQuery(favoritesQueryArg);
+  const { data: inventoryProteins = [] } = useGetUserProteinCollectionQuery(inventoryQueryArg);
+  const [saveUserProtein] = useSaveUserProteinMutation();
+  const [removeUserProtein] = useRemoveUserProteinMutation();
 
   useEffect(() => {
     if (typeof document === 'undefined') {
@@ -172,9 +184,32 @@ export default function App({ initialWorkspace = 'explorer', initialTheme = 'dar
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  useEffect(() => {
+    let active = true;
+
+    const bootstrapFirebaseUser = async () => {
+      try {
+        const user = await ensureAnonymousSession();
+        if (!user || !active) {
+          return;
+        }
+
+        setFirebaseUserId(user.uid);
+      } catch (error) {
+        console.error('Failed to initialize Firebase anonymous auth:', error);
+      }
+    };
+
+    void bootstrapFirebaseUser();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
   const availableProteins = useMemo(
-    () => mergeUniqueProteins(starterProteins, pinnedProteins, historyProteins, searchResults),
-    [historyProteins, pinnedProteins, searchResults],
+    () => mergeUniqueProteins(starterProteins, pinnedProteins, inventoryProteins, historyProteins, searchResults),
+    [historyProteins, inventoryProteins, pinnedProteins, searchResults],
   );
 
   const selectedProtein = useMemo(
@@ -186,11 +221,11 @@ export default function App({ initialWorkspace = 'explorer', initialTheme = 'dar
     () =>
       buildProteinBankRows({
         starterProteins,
+        inventoryProteins,
         pinnedProteins,
-        historyProteins,
         searchResults,
       }),
-    [historyProteins, pinnedProteins, searchResults],
+    [inventoryProteins, pinnedProteins, searchResults],
   );
 
   const visibleBankRows = useMemo(() => filterProteinBankRows(bankRows, bankFilters), [bankFilters, bankRows]);
@@ -221,7 +256,7 @@ export default function App({ initialWorkspace = 'explorer', initialTheme = 'dar
   })();
 
   const resetLearningState = (protein: Protein, tab: InspectorTab = 'structure') => {
-    setChainFilter('all');
+    setChainFilter([]);
     setSelectedResidue(null);
     setHoveredResidue(null);
     setActiveTarget(null);
@@ -232,9 +267,10 @@ export default function App({ initialWorkspace = 'explorer', initialTheme = 'dar
 
   const handleSelectProtein = (
     protein: Protein,
-    options?: { saveHistory?: boolean; tab?: InspectorTab; workspace?: WorkspaceTab },
+    options?: { saveHistory?: boolean; tab?: InspectorTab; workspace?: WorkspaceTab; sidebarEntryId?: string | null },
   ) => {
     setSelectedId(protein.id);
+    setSelectedSidebarEntryId(options?.sidebarEntryId ?? null);
     resetLearningState(protein, options?.tab ?? 'structure');
 
     if (options?.saveHistory ?? protein.metadata.source === 'rcsb') {
@@ -246,6 +282,24 @@ export default function App({ initialWorkspace = 'explorer', initialTheme = 'dar
     }
   };
 
+  const handleSelectSidebarProtein = (protein: Protein, entryId: string) => {
+    const run = async () => {
+      const pdbId = protein.metadata.pdbId ?? protein.id;
+
+      try {
+        const hasViewerGeometry = protein.atoms.length > 0 || protein.backboneAtoms.length > 0;
+        const proteinToOpen = hasViewerGeometry ? protein : await loadProteinById(pdbId);
+        handleSelectProtein(proteinToOpen, { workspace: 'explorer', sidebarEntryId: entryId });
+      } catch (error) {
+        console.error('Failed to load full protein from sidebar selection:', error);
+        handleSelectProtein(protein, { workspace: 'explorer', sidebarEntryId: entryId });
+        setStatusMessage(error instanceof Error ? error.message : 'Failed to load the selected protein.');
+      }
+    };
+
+    void run();
+  };
+
   const handleSearchResults = (proteins: Protein[]) => {
     setSearchResults(proteins);
     setStatusMessage(
@@ -254,7 +308,132 @@ export default function App({ initialWorkspace = 'explorer', initialTheme = 'dar
   };
 
   const handleTogglePinned = (protein: Protein) => {
-    setPinnedProteins(togglePinnedProtein(protein));
+    const run = async () => {
+      try {
+        const activeUserId = firebaseUserId ?? (await ensureAnonymousSession())?.uid ?? null;
+        if (!activeUserId) {
+          setStatusMessage('Firebase anonymous auth is not ready yet.');
+          return;
+        }
+
+        if (activeUserId !== firebaseUserId) {
+          setFirebaseUserId(activeUserId);
+        }
+
+        const wasPinned = pinnedProteins.some((entry) => entry.id === protein.id);
+        if (wasPinned) {
+          await removeUserProtein({ userId: activeUserId, collectionName: 'favorites', proteinId: protein.id }).unwrap();
+          setStatusMessage(`Removed ${protein.name ?? protein.metadata.displayTitle} from favorites.`);
+        } else {
+          await saveUserProtein({ userId: activeUserId, collectionName: 'favorites', protein }).unwrap();
+          setStatusMessage(`Added ${protein.name ?? protein.metadata.displayTitle} to favorites.`);
+        }
+      } catch (error) {
+        console.error('Failed to update favorite in Firebase:', error);
+        setStatusMessage(error instanceof Error ? error.message : 'Failed to update favorites in Firebase.');
+      }
+    };
+
+    void run();
+  };
+
+  const handleAddToInventory = (protein: Protein) => {
+    const run = async () => {
+      try {
+        const activeUserId = firebaseUserId ?? (await ensureAnonymousSession())?.uid ?? null;
+        if (!activeUserId) {
+          setStatusMessage('Firebase anonymous auth is not ready yet.');
+          return;
+        }
+
+        if (activeUserId !== firebaseUserId) {
+          setFirebaseUserId(activeUserId);
+        }
+
+        const alreadyInInventory = inventoryProteins.some((entry) => entry.id === protein.id);
+        if (alreadyInInventory) {
+          await removeUserProtein({ userId: activeUserId, collectionName: 'inventory', proteinId: protein.id }).unwrap();
+          setStatusMessage(`Removed ${protein.name ?? protein.metadata.displayTitle} from inventory.`);
+          return;
+        }
+
+        await saveUserProtein({ userId: activeUserId, collectionName: 'inventory', protein }).unwrap();
+        setStatusMessage(`Added ${protein.name ?? protein.metadata.displayTitle} to inventory.`);
+      } catch (error) {
+        console.error('Failed to save inventory protein to Firebase:', error);
+        setStatusMessage(error instanceof Error ? error.message : 'Failed to update inventory in Firebase.');
+      }
+    };
+
+    void run();
+  };
+
+  const handleRenameSidebarProtein = (
+    protein: Protein,
+    nextName: string,
+    options: { saveToFavorites: boolean; saveToInventory: boolean; updateHistory: boolean },
+  ) => {
+    const run = async () => {
+      const trimmedName = nextName.trim();
+      if (!trimmedName) {
+        return;
+      }
+
+      const renamedProtein: Protein = {
+        ...protein,
+        name: trimmedName,
+        metadata: {
+          ...protein.metadata,
+          title: trimmedName,
+          displayTitle: trimmedName,
+          moleculeName: trimmedName,
+        },
+      };
+
+      try {
+        const activeUserId =
+          options.saveToFavorites || options.saveToInventory ? firebaseUserId ?? (await ensureAnonymousSession())?.uid ?? null : firebaseUserId;
+
+        if ((options.saveToFavorites || options.saveToInventory) && !activeUserId) {
+          setStatusMessage('Firebase anonymous auth is not ready yet.');
+          return;
+        }
+
+        if (activeUserId && activeUserId !== firebaseUserId) {
+          setFirebaseUserId(activeUserId);
+        }
+
+        const writes: Promise<unknown>[] = [];
+        if (options.saveToFavorites && activeUserId) {
+          writes.push(saveUserProtein({ userId: activeUserId, collectionName: 'favorites', protein: renamedProtein }).unwrap());
+        }
+        if (options.saveToInventory && activeUserId) {
+          writes.push(saveUserProtein({ userId: activeUserId, collectionName: 'inventory', protein: renamedProtein }).unwrap());
+        }
+
+        if (writes.length > 0) {
+          await Promise.all(writes);
+        }
+
+        const shouldUpdateHistory = options.updateHistory || historyProteins.some((entry) => entry.id === protein.id);
+        if (shouldUpdateHistory) {
+          setHistoryProteins(renameHistoryItem(protein.id, trimmedName));
+        }
+
+        if (selectedId === protein.id) {
+          setSearchResults((current) =>
+            current.map((entry) => (entry.id === protein.id ? renamedProtein : entry)),
+          );
+        }
+
+        setStatusMessage(`Renamed ${protein.metadata.displayTitle ?? protein.name} to ${trimmedName}.`);
+      } catch (error) {
+        console.error('Failed to rename protein in sidebar collections:', error);
+        setStatusMessage(error instanceof Error ? error.message : 'Failed to rename protein.');
+      }
+    };
+
+    void run();
   };
 
   const handleRemoveHistory = (proteinId: string) => {
@@ -284,7 +463,7 @@ export default function App({ initialWorkspace = 'explorer', initialTheme = 'dar
       setStructureLevel(target.level);
     }
     if (target.kind === 'chain') {
-      setChainFilter(target.chainId);
+      setChainFilter([target.chainId]);
       setStructureLevel(selectedProtein && selectedProtein.chains.length > 1 ? 'quaternary' : 'tertiary');
       setSequenceState((current) => ({
         ...current,
@@ -293,7 +472,7 @@ export default function App({ initialWorkspace = 'explorer', initialTheme = 'dar
       }));
     }
     if (target.kind === 'region') {
-      setChainFilter(target.region.chainId);
+      setChainFilter([target.region.chainId]);
       if (target.region.structureLevel) {
         setStructureLevel(target.region.structureLevel);
       }
@@ -305,7 +484,7 @@ export default function App({ initialWorkspace = 'explorer', initialTheme = 'dar
       }));
     }
     if (target.kind === 'variant') {
-      setChainFilter(target.variant.chainId);
+      setChainFilter([target.variant.chainId]);
       setSelectedResidue({
         residueId: `${target.variant.chainId}:${target.variant.residueNumber}:`,
         chainId: target.variant.chainId,
@@ -319,7 +498,7 @@ export default function App({ initialWorkspace = 'explorer', initialTheme = 'dar
       }));
     }
     if (target.kind === 'residue') {
-      setChainFilter(target.residue.chainId);
+      setChainFilter([target.residue.chainId]);
       setSelectedResidue(target.residue);
       setStructureLevel('primary');
       setSequenceState((current) => ({
@@ -367,13 +546,13 @@ export default function App({ initialWorkspace = 'explorer', initialTheme = 'dar
     setStatusMessage(null);
   };
 
-  const requestFitView = () => {
-    setFitViewNonce((current) => current + 1);
+  const openInventoryWorkspace = () => {
+    setWorkspace('inventory');
     setStatusMessage(null);
   };
 
-  const openCommandPalette = () => {
-    setCommandOpen(true);
+  const requestFitView = () => {
+    setFitViewNonce((current) => current + 1);
     setStatusMessage(null);
   };
 
@@ -394,14 +573,8 @@ export default function App({ initialWorkspace = 'explorer', initialTheme = 'dar
   };
 
   const chainOptions = selectedProtein?.chains.map((chain) => chain.id) ?? [];
-  const chainComboboxOptions: ComboboxOption[] = [
-    { value: 'all', label: 'All chains', keywords: ['all', 'chains'] },
-    ...chainOptions.map((chainId) => ({ value: chainId, label: `Chain ${chainId}`, keywords: [chainId, 'chain'] })),
-  ];
-  const unitComboboxOptions: ComboboxOption[] = [
-    { value: 'angstrom', label: 'Angstrom (Å)', keywords: ['angstrom', 'angstroms', 'a'] },
-    { value: 'nanometer', label: 'Nanometer (nm)', keywords: ['nanometer', 'nanometers', 'nm'] },
-  ];
+  const visibleChainLabel =
+    chainFilter.length === 0 ? 'All chains' : chainFilter.length === 1 ? `Chain ${chainFilter[0]}` : `${chainFilter.length} chains`;
   const pinnedIds = new Set(pinnedProteins.map((protein) => protein.id));
 
   return (
@@ -411,14 +584,17 @@ export default function App({ initialWorkspace = 'explorer', initialTheme = 'dar
           <AppSidebar
             workspace={workspace}
             pinnedProteins={pinnedProteins}
+            inventoryProteins={inventoryProteins}
             historyProteins={historyProteins}
-            selectedId={selectedProtein?.id ?? null}
-            onSelectProtein={(protein) => handleSelectProtein(protein, { workspace: 'explorer' })}
+            selectedSidebarEntryId={selectedSidebarEntryId}
+            onSelectProtein={handleSelectSidebarProtein}
             onTogglePinned={handleTogglePinned}
+            onToggleInventory={handleAddToInventory}
+            onRenameProtein={handleRenameSidebarProtein}
             onRemoveHistory={handleRemoveHistory}
             onSearch={openProteinBankWorkspace}
-            onAskAI={openCommandPalette}
-            onProteinBankViewer={openProteinBankWorkspace}
+            onExplore={openProteinBankWorkspace}
+            onInventory={openInventoryWorkspace}
             onClearHistory={() => setHistoryProteins(clearLibrarySection('history').history)}
             onToggleTheme={handleToggleTheme}
           />
@@ -467,120 +643,107 @@ export default function App({ initialWorkspace = 'explorer', initialTheme = 'dar
                               ) : null}
                             </div>
 
-                            <div className="grid gap-2 sm:grid-cols-[minmax(0,11rem)_minmax(0,12rem)_auto_auto]">
-                              <Combobox
-                                options={chainComboboxOptions}
-                                value={chainFilter}
-                                onValueChange={(nextChain) => {
-                                  setChainFilter(nextChain);
-                                  setSequenceState((current) => ({
-                                    ...current,
-                                    activeChainId: nextChain === 'all' ? 'all' : nextChain,
-                                  }));
-                                }}
-                                placeholder="Chain"
-                                searchPlaceholder="Filter chains..."
-                                emptyMessage="No chain matches."
-                                disabled={!selectedProtein}
-                                ariaLabel="Choose chain"
-                              />
+                            <div className="flex flex-wrap justify-end gap-2">
+                              <Menubar>
+                                <MenubarMenu>
+                                  <MenubarTrigger>Select</MenubarTrigger>
+                                  <MenubarContent>
+                                    <MenubarCheckboxItem
+                                      checked={chainFilter.length === 0}
+                                      disabled={!selectedProtein}
+                                      onCheckedChange={(checked) => {
+                                        if (checked) {
+                                          setChainFilter([]);
+                                          setSequenceState((current) => ({
+                                            ...current,
+                                            activeChainId: 'all',
+                                          }));
+                                        }
+                                      }}
+                                    >
+                                      {visibleChainLabel}
+                                    </MenubarCheckboxItem>
+                                    <MenubarSeparator />
+                                    {chainOptions.map((chainId) => {
+                                      const isChecked = chainFilter.includes(chainId);
 
-                              <Combobox
-                                options={unitComboboxOptions}
-                                value={viewerSceneSettings.unitSystem}
-                                onValueChange={(value) =>
-                                  setViewerSceneSettings((current) => ({
-                                    ...current,
-                                    unitSystem: value as ViewerSceneSettings['unitSystem'],
-                                  }))
-                                }
-                                placeholder="Units"
-                                searchPlaceholder="Filter units..."
-                                emptyMessage="No unit matches."
-                                ariaLabel="Choose viewer units"
-                              />
+                                      return (
+                                        <MenubarCheckboxItem
+                                          key={chainId}
+                                          checked={isChecked}
+                                          disabled={!selectedProtein}
+                                          onCheckedChange={(checked) => {
+                                            setChainFilter((current) => {
+                                              const next = checked ? [...new Set([...current, chainId])] : current.filter((entry) => entry !== chainId);
+                                              setSequenceState((sequenceCurrent) => ({
+                                                ...sequenceCurrent,
+                                                activeChainId:
+                                                  next.length === 1
+                                                    ? next[0]
+                                                    : next.length === 0
+                                                      ? 'all'
+                                                      : sequenceCurrent.activeChainId,
+                                              }));
+                                              return next;
+                                            });
+                                          }}
+                                        >
+                                          Chain {chainId}
+                                        </MenubarCheckboxItem>
+                                      );
+                                    })}
+                                  </MenubarContent>
+                                </MenubarMenu>
 
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="outline" className="rounded-xl">
-                                    Viewer menu
-                                  </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end" className="w-64 rounded-xl">
-                                  <DropdownMenuLabel>Viewer actions</DropdownMenuLabel>
-                                  <DropdownMenuSeparator />
+                                <MenubarMenu>
+                                  <MenubarTrigger>View</MenubarTrigger>
+                                  <MenubarContent>
+                                    <MenubarSub>
+                                      <MenubarSubTrigger>Representation</MenubarSubTrigger>
+                                      <MenubarSubContent className="w-44 rounded-xl">
+                                        <MenubarRadioGroup value={viewerMode} onValueChange={(value) => setViewerMode(value as ViewerMode)}>
+                                          <MenubarRadioItem value="atoms">Atoms</MenubarRadioItem>
+                                          <MenubarRadioItem value="backbone">Backbone</MenubarRadioItem>
+                                          <MenubarRadioItem value="cartoon">Cartoon</MenubarRadioItem>
+                                        </MenubarRadioGroup>
+                                      </MenubarSubContent>
+                                    </MenubarSub>
 
-                                  <DropdownMenuSub>
-                                    <DropdownMenuSubTrigger>Representation</DropdownMenuSubTrigger>
-                                    <DropdownMenuSubContent className="w-44 rounded-xl">
-                                      <DropdownMenuRadioGroup value={viewerMode} onValueChange={(value) => setViewerMode(value as ViewerMode)}>
-                                        <DropdownMenuRadioItem value="atoms">Atoms</DropdownMenuRadioItem>
-                                        <DropdownMenuRadioItem value="backbone">Backbone</DropdownMenuRadioItem>
-                                        <DropdownMenuRadioItem value="cartoon">Cartoon</DropdownMenuRadioItem>
-                                      </DropdownMenuRadioGroup>
-                                    </DropdownMenuSubContent>
-                                  </DropdownMenuSub>
-
-                                  <DropdownMenuCheckboxItem checked={showAxes} onCheckedChange={(checked) => setShowAxes(Boolean(checked))}>
-                                    Axes
-                                  </DropdownMenuCheckboxItem>
-                                  <DropdownMenuCheckboxItem
-                                    checked={viewerSceneSettings.showGrid}
-                                    onCheckedChange={(checked) =>
-                                      setViewerSceneSettings((current) => ({ ...current, showGrid: Boolean(checked) }))
-                                    }
-                                  >
-                                    Grid
-                                  </DropdownMenuCheckboxItem>
-                                  <DropdownMenuCheckboxItem
-                                    checked={viewerSceneSettings.showFog}
-                                    onCheckedChange={(checked) =>
-                                      setViewerSceneSettings((current) => ({ ...current, showFog: Boolean(checked) }))
-                                    }
-                                  >
-                                    Fog
-                                  </DropdownMenuCheckboxItem>
-
-                                  <DropdownMenuSeparator />
-                                  <DropdownMenuItem
-                                    onSelect={() => {
-                                      if (selectedProtein) {
-                                        resetLearningState(selectedProtein, 'structure');
+                                    <MenubarCheckboxItem checked={showAxes} onCheckedChange={(checked) => setShowAxes(Boolean(checked))}>
+                                      Axes
+                                    </MenubarCheckboxItem>
+                                    <MenubarCheckboxItem
+                                      checked={viewerSceneSettings.showGrid}
+                                      onCheckedChange={(checked) =>
+                                        setViewerSceneSettings((current) => ({ ...current, showGrid: Boolean(checked) }))
                                       }
-                                    }}
-                                  >
-                                    Reset focus
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem onSelect={requestFitView}>Fit view</DropdownMenuItem>
-                                  <DropdownMenuItem onSelect={() => setActiveTab('sequence')}>Open sequence</DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
+                                    >
+                                      Grid
+                                    </MenubarCheckboxItem>
+                                    <MenubarCheckboxItem
+                                      checked={viewerSceneSettings.showFog}
+                                      onCheckedChange={(checked) =>
+                                        setViewerSceneSettings((current) => ({ ...current, showFog: Boolean(checked) }))
+                                      }
+                                    >
+                                      Fog
+                                    </MenubarCheckboxItem>
 
-                              {selectedProtein ? (
-                                <HoverCard>
-                                  <HoverCardTrigger asChild>
-                                    <Button variant="outline" className="rounded-xl">
-                                      Source details
-                                    </Button>
-                                  </HoverCardTrigger>
-                                  <HoverCardContent align="end" className="w-80 rounded-xl">
-                                    <div className="space-y-2 text-sm">
-                                      <div className="font-medium">{selectedProtein.metadata.rawTitle}</div>
-                                      <p className="text-muted-foreground">
-                                        {selectedProtein.metadata.functionSummary ?? selectedProtein.metadata.description}
-                                      </p>
-                                      <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                                        <span>PDB: {selectedProtein.metadata.pdbId ?? 'Sample'}</span>
-                                        <span>Source: {selectedProtein.metadata.source}</span>
-                                        <span>Method: {selectedProtein.metadata.experimentalMethod ?? 'Unavailable'}</span>
-                                        <span>
-                                          Resolution: {selectedProtein.metadata.resolution ? `${selectedProtein.metadata.resolution.toFixed(2)} Å` : 'Unavailable'}
-                                        </span>
-                                      </div>
-                                    </div>
-                                  </HoverCardContent>
-                                </HoverCard>
-                              ) : null}
+                                    <MenubarSeparator />
+                                    <MenubarItem
+                                      onSelect={() => {
+                                        if (selectedProtein) {
+                                          resetLearningState(selectedProtein, 'structure');
+                                        }
+                                      }}
+                                    >
+                                      Reset focus
+                                    </MenubarItem>
+                                    <MenubarItem onSelect={requestFitView}>Fit view</MenubarItem>
+                                    <MenubarItem onSelect={() => setActiveTab('sequence')}>Open sequence</MenubarItem>
+                                  </MenubarContent>
+                                </MenubarMenu>
+                              </Menubar>
                             </div>
                           </div>
                         </div>
@@ -638,19 +801,40 @@ export default function App({ initialWorkspace = 'explorer', initialTheme = 'dar
                     </div>
                   </div>
                 </div>
-              ) : (
+              ) : workspace === 'protein-bank' ? (
                 <div className="min-h-0 flex-1 overflow-auto pr-1">
                   <ProteinBank
                     rows={visibleBankRows}
+                    pageMode="explore"
                     selectedId={selectedProtein?.id ?? null}
                     filters={bankFilters}
                     sortKey={bankSortKey}
                     pinnedIds={pinnedIds}
+                    inventoryIds={new Set(inventoryProteins.map((protein) => protein.id))}
                     onFiltersChange={setBankFilters}
                     onSortKeyChange={setBankSortKey}
                     onSearchResults={handleSearchResults}
                     onOpenProtein={(protein) => handleSelectProtein(protein, { workspace: 'explorer', tab: 'structure' })}
                     onTogglePinned={handleTogglePinned}
+                    onToggleInventory={handleAddToInventory}
+                  />
+                </div>
+              ) : (
+                <div className="min-h-0 flex-1 overflow-auto pr-1">
+                  <ProteinBank
+                    rows={visibleBankRows}
+                    pageMode="inventory"
+                    selectedId={selectedProtein?.id ?? null}
+                    filters={bankFilters}
+                    sortKey={bankSortKey}
+                    pinnedIds={pinnedIds}
+                    inventoryIds={new Set(inventoryProteins.map((protein) => protein.id))}
+                    onFiltersChange={setBankFilters}
+                    onSortKeyChange={setBankSortKey}
+                    onSearchResults={handleSearchResults}
+                    onOpenProtein={(protein) => handleSelectProtein(protein, { workspace: 'explorer', tab: 'structure' })}
+                    onTogglePinned={handleTogglePinned}
+                    onToggleInventory={handleAddToInventory}
                   />
                 </div>
               )}

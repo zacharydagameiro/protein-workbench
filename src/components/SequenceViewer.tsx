@@ -13,7 +13,7 @@ import { buildVisibleSequenceLanes } from '../utils/sequenceTrack.js';
 
 interface SequenceViewerProps {
   protein: Protein;
-  chainFilter: string;
+  chainFilter: string[];
   structureLevel: StructureLevel;
   sequenceState: SequencePanelState;
   activeTarget?: ViewerTarget | null;

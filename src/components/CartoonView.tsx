@@ -4,7 +4,7 @@ import type { Atom, Protein } from '../types/structure.js';
 
 interface CartoonViewProps {
   protein: Protein;
-  visibleChainIds: Set<string>;
+  emphasizedChainIds: Set<string>;
 }
 
 interface Segment {
@@ -12,6 +12,7 @@ interface Segment {
   atoms: Atom[];
   color: string;
   radius: number;
+  opacity: number;
 }
 
 const colorForStructure = (structure: string): { color: string; radius: number } => {
@@ -25,7 +26,7 @@ const colorForStructure = (structure: string): { color: string; radius: number }
   }
 };
 
-function RibbonSegment({ atoms, color, radius }: Segment) {
+function RibbonSegment({ atoms, color, radius, opacity }: Segment) {
   const geometry = useMemo(() => {
     if (atoms.length < 2) {
       return null;
@@ -43,12 +44,12 @@ function RibbonSegment({ atoms, color, radius }: Segment) {
 
   return (
     <mesh geometry={geometry}>
-      <meshStandardMaterial color={color} />
+      <meshStandardMaterial color={color} transparent opacity={opacity} />
     </mesh>
   );
 }
 
-export default function CartoonView({ protein, visibleChainIds }: CartoonViewProps) {
+export default function CartoonView({ protein, emphasizedChainIds }: CartoonViewProps) {
   const residueIndex = useMemo(() => {
     const entries = protein.chains.flatMap((chain) => chain.residues.map((residue) => [residue.id, residue.secondaryStructure] as const));
     return new Map(entries);
@@ -59,9 +60,6 @@ export default function CartoonView({ protein, visibleChainIds }: CartoonViewPro
 
     for (const atom of protein.backboneAtoms) {
       const chainId = atom.chainId ?? 'A';
-      if (!visibleChainIds.has(chainId)) {
-        continue;
-      }
       const next = byChain.get(chainId) ?? [];
       next.push(atom);
       byChain.set(chainId, next);
@@ -88,6 +86,7 @@ export default function CartoonView({ protein, visibleChainIds }: CartoonViewPro
         builtSegments.push({
           id: `${chainId}:${currentStructure}:${currentSegmentAtoms[0]?.id ?? 'start'}`,
           atoms: currentSegmentAtoms,
+          opacity: emphasizedChainIds.has(chainId) ? 0.96 : 0.08,
           ...segmentStyle,
         });
         currentSegmentAtoms = [currentSegmentAtoms[currentSegmentAtoms.length - 1], atom];
@@ -98,13 +97,14 @@ export default function CartoonView({ protein, visibleChainIds }: CartoonViewPro
         builtSegments.push({
           id: `${chainId}:${currentStructure}:${currentSegmentAtoms[0]?.id ?? 'end'}`,
           atoms: currentSegmentAtoms,
+          opacity: emphasizedChainIds.has(chainId) ? 0.96 : 0.08,
           ...colorForStructure(currentStructure),
         });
       }
     }
 
     return builtSegments;
-  }, [protein.backboneAtoms, residueIndex, visibleChainIds]);
+  }, [emphasizedChainIds, protein.backboneAtoms, residueIndex]);
 
   return (
     <>

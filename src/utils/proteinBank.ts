@@ -7,8 +7,8 @@ import type {
 
 interface BuildProteinBankRowsInput {
   starterProteins: Protein[];
+  inventoryProteins: Protein[];
   pinnedProteins: Protein[];
-  historyProteins: Protein[];
   searchResults: Protein[];
 }
 
@@ -16,8 +16,8 @@ const defaultRowText = (value: string | undefined, fallback = 'Unavailable') => 
 
 export const buildProteinBankRows = ({
   starterProteins,
+  inventoryProteins,
   pinnedProteins,
-  historyProteins,
   searchResults,
 }: BuildProteinBankRowsInput): ProteinBankRow[] => {
   const rows = new Map<string, ProteinBankRow>();
@@ -45,8 +45,8 @@ export const buildProteinBankRows = ({
   };
 
   starterProteins.forEach((protein) => register(protein, 'starter'));
+  inventoryProteins.forEach((protein) => register(protein, 'inventory'));
   pinnedProteins.forEach((protein) => register(protein, 'pinned'));
-  historyProteins.forEach((protein) => register(protein, 'history'));
   searchResults.forEach((protein) => register(protein, 'search'));
 
   return [...rows.values()];

@@ -1,4 +1,4 @@
-import { Suspense, useEffect, useMemo, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type MutableRefObject, type SetStateAction } from 'react';
 import { Canvas, type ThreeEvent, useFrame } from '@react-three/fiber';
 import { OrbitControls, Text } from '@react-three/drei';
 import { AxesHelper, Vector3 } from 'three';
@@ -22,15 +22,13 @@ import {
 } from './ui/context-menu.js';
 import type { Atom, Protein, StructureLevel, ViewerMode, ViewerSceneSettings, ViewerSelection, ViewerTarget } from '../types/structure.js';
 import {
-  getBoundsSizeLabel,
   getFittedCameraDistance,
-  getScaleBarDisplay,
   getStructureBounds,
 } from '../utils/viewerScene.js';
 
 interface ProteinViewerProps {
   protein: Protein | null;
-  chainFilter: string;
+  chainFilter: string[];
   viewMode: ViewerMode;
   showAxes: boolean;
   sceneSettings: ViewerSceneSettings;
@@ -141,6 +139,8 @@ function AtomMesh({
   activeTarget,
   selectedResidue,
   hoveredResidue,
+  isEmphasizedChain,
+  hoverEnabled,
   onResidueHover,
   onResidueSelect,
 }: {
@@ -150,6 +150,8 @@ function AtomMesh({
   activeTarget?: ViewerTarget | null;
   selectedResidue?: ViewerSelection | null;
   hoveredResidue?: ViewerSelection | null;
+  isEmphasizedChain: boolean;
+  hoverEnabled: boolean;
   onResidueHover?: (residue: ViewerSelection | null) => void;
   onResidueSelect?: (residue: ViewerSelection) => void;
 }) {
@@ -162,18 +164,27 @@ function AtomMesh({
     ? '#facc15'
     : isHovered
       ? '#fb923c'
-      : isTargeted
-        ? '#67e8f9'
-        : emphasizeChains
-          ? chainColor(atom.chainId ?? 'A')
-          : elementColor(atom.element);
+        : isTargeted
+          ? '#67e8f9'
+          : emphasizeChains
+            ? chainColor(atom.chainId ?? 'A')
+            : elementColor(atom.element);
+  const baseOpacity = isEmphasizedChain ? (activeTarget ? 0.24 : 0.92) : 0.08;
 
   return (
-    <mesh
+      <mesh
       position={[atom.x, atom.y, atom.z]}
       scale={isSelected ? 1.4 : isHovered ? 1.15 : isTargeted ? 1.08 : 1}
-      onPointerEnter={() => onResidueHover?.(selection)}
-      onPointerLeave={() => onResidueHover?.(null)}
+      onPointerEnter={() => {
+        if (hoverEnabled) {
+          onResidueHover?.(selection);
+        }
+      }}
+      onPointerLeave={() => {
+        if (hoverEnabled) {
+          onResidueHover?.(null);
+        }
+      }}
       onClick={(event: ThreeEvent<MouseEvent>) => {
         event.stopPropagation();
         onResidueSelect?.(selection);
@@ -185,7 +196,7 @@ function AtomMesh({
         emissive={color}
         emissiveIntensity={isSelected || isHovered || isTargeted ? 0.35 : 0.08}
         transparent
-        opacity={isSelected || isHovered || isTargeted ? 1 : activeTarget ? 0.24 : 0.92}
+        opacity={isSelected || isHovered || isTargeted ? 1 : baseOpacity}
       />
     </mesh>
   );
@@ -323,7 +334,7 @@ function IdleCameraAnimation({
 
 function ProteinScene({
   protein,
-  visibleChainIds,
+  emphasizedChainIds,
   viewMode,
   showAxes,
   showGrid,
@@ -331,11 +342,12 @@ function ProteinScene({
   activeTarget,
   selectedResidue,
   hoveredResidue,
+  hoverEnabled,
   onResidueHover,
   onResidueSelect,
 }: {
   protein: Protein;
-  visibleChainIds: Set<string>;
+  emphasizedChainIds: Set<string>;
   viewMode: ViewerMode;
   showAxes: boolean;
   showGrid: boolean;
@@ -343,12 +355,13 @@ function ProteinScene({
   activeTarget?: ViewerTarget | null;
   selectedResidue?: ViewerSelection | null;
   hoveredResidue?: ViewerSelection | null;
+  hoverEnabled: boolean;
   onResidueHover?: (residue: ViewerSelection | null) => void;
   onResidueSelect?: (residue: ViewerSelection) => void;
 }) {
   const filteredAtoms = useMemo(
-    () => protein.atoms.filter((atom) => visibleChainIds.has(atom.chainId ?? 'A')),
-    [protein.atoms, visibleChainIds],
+    () => protein.atoms,
+    [protein.atoms],
   );
 
   const center = useMemo(() => {
@@ -419,6 +432,8 @@ function ProteinScene({
                   activeTarget={activeTarget}
                   selectedResidue={selectedResidue}
                   hoveredResidue={hoveredResidue}
+                  isEmphasizedChain={emphasizedChainIds.has(atom.chainId ?? 'A')}
+                  hoverEnabled={hoverEnabled}
                   onResidueHover={onResidueHover}
                   onResidueSelect={onResidueSelect}
                 />
@@ -430,17 +445,18 @@ function ProteinScene({
       {viewMode === 'backbone' ? (
         <BackboneView
           protein={protein}
-          visibleChainIds={visibleChainIds}
+          emphasizedChainIds={emphasizedChainIds}
           structureLevel={structureLevel}
           activeTarget={activeTarget}
           selectedResidue={selectedResidue}
           hoveredResidue={hoveredResidue}
+          hoverEnabled={hoverEnabled}
           onResidueHover={onResidueHover}
           onResidueSelect={onResidueSelect}
         />
       ) : null}
 
-      {viewMode === 'cartoon' ? <CartoonView protein={protein} visibleChainIds={visibleChainIds} /> : null}
+      {viewMode === 'cartoon' ? <CartoonView protein={protein} emphasizedChainIds={emphasizedChainIds} /> : null}
     </group>
   );
 }
@@ -463,44 +479,91 @@ export function ProteinViewer({
   onResidueSelect,
   onResetFocus,
 }: ProteinViewerProps) {
-  const [camera, setCamera] = useState<THREE.Camera | null>(null);
+  const [axisCamera, setAxisCamera] = useState<THREE.Camera | null>(null);
+  const [cameraReady, setCameraReady] = useState(false);
   const [autoOrbiting, setAutoOrbiting] = useState(false);
+  const [interactionLocked, setInteractionLocked] = useState(false);
+  const cameraRef = useRef<THREE.Camera | null>(null);
   const controlsRef = useRef<CameraControlsHandle | null>(null);
-  const lastInteractionRef = useRef<number>(performance.now());
+  const lastInteractionRef = useRef<number>(0);
   const autoOrbitingRef = useRef(false);
-  const visibleChainIds = useMemo(() => new Set(chainFilter === 'all' ? protein?.chains.map((chain) => chain.id) ?? [] : [chainFilter]), [chainFilter, protein]);
+  const interactionReleaseTimeoutRef = useRef<number | null>(null);
+  const emphasizedChainIds = useMemo(
+    () => new Set(chainFilter.length === 0 ? protein?.chains.map((chain) => chain.id) ?? [] : chainFilter),
+    [chainFilter, protein],
+  );
   const visibleAtoms = useMemo(
-    () => protein?.atoms.filter((atom) => visibleChainIds.has(atom.chainId ?? 'A')) ?? [],
-    [protein?.atoms, visibleChainIds],
+    () => protein?.atoms ?? [],
+    [protein?.atoms],
   );
   const bounds = useMemo(() => getStructureBounds(visibleAtoms), [visibleAtoms]);
-  const scaleBar = useMemo(() => getScaleBarDisplay(bounds, sceneSettings.unitSystem), [bounds, sceneSettings.unitSystem]);
-  const sizeLabel = useMemo(() => getBoundsSizeLabel(bounds, sceneSettings.unitSystem), [bounds, sceneSettings.unitSystem]);
 
-  const markInteraction = () => {
+  const markInteractionRefs = () => {
     autoOrbitingRef.current = false;
     if (controlsRef.current) {
       controlsRef.current.autoRotate = false;
     }
     lastInteractionRef.current = performance.now();
+  };
+
+  const markInteraction = () => {
+    markInteractionRefs();
     setAutoOrbiting(false);
   };
+
+  const clearInteractionReleaseTimeout = () => {
+    if (interactionReleaseTimeoutRef.current !== null && typeof window !== 'undefined') {
+      window.clearTimeout(interactionReleaseTimeoutRef.current);
+      interactionReleaseTimeoutRef.current = null;
+    }
+  };
+
+  const beginInteractionLock = () => {
+    clearInteractionReleaseTimeout();
+    setInteractionLocked(true);
+    onResidueHover?.(null);
+    markInteraction();
+  };
+
+  const endInteractionLock = () => {
+    clearInteractionReleaseTimeout();
+    if (typeof window === 'undefined') {
+      setInteractionLocked(false);
+      return;
+    }
+
+    interactionReleaseTimeoutRef.current = window.setTimeout(() => {
+      setInteractionLocked(false);
+      interactionReleaseTimeoutRef.current = null;
+    }, 160);
+  };
+
+  useEffect(() => {
+    lastInteractionRef.current = performance.now();
+  }, []);
 
   useEffect(() => {
     onResidueHover?.(null);
   }, [chainFilter, onResidueHover, protein?.id, viewMode]);
+
+  useEffect(
+    () => () => {
+      clearInteractionReleaseTimeout();
+    },
+    [],
+  );
 
   useEffect(() => {
     autoOrbitingRef.current = autoOrbiting;
   }, [autoOrbiting]);
 
   useEffect(() => {
-    markInteraction();
+    markInteractionRefs();
   }, [activeTarget, chainFilter, protein?.id, selectedResidue?.residueId, showAxes, structureLevel, viewMode]);
 
-  const fitViewToStructure = () => {
+  const positionCameraToStructure = useCallback(() => {
     const controls = controlsRef.current;
-    const perspectiveCamera = camera as THREE.PerspectiveCamera | null;
+    const perspectiveCamera = cameraRef.current as THREE.PerspectiveCamera | null;
     if (!controls || !perspectiveCamera) {
       return;
     }
@@ -515,16 +578,21 @@ export function ProteinViewer({
     controls.minDistance = Math.max(distance * 0.35, 4);
     controls.maxDistance = Math.max(distance * 4.5, 30);
     controls.update();
+  }, [bounds]);
+
+  const fitViewToStructure = () => {
+    positionCameraToStructure();
     markInteraction();
   };
 
   useEffect(() => {
-    if (!protein || !camera || !controlsRef.current || visibleAtoms.length === 0) {
+    if (!protein || !cameraReady || !controlsRef.current || visibleAtoms.length === 0) {
       return;
     }
 
-    fitViewToStructure();
-  }, [protein?.id, chainFilter, viewMode, fitViewNonce, camera, visibleAtoms.length]);
+    positionCameraToStructure();
+    markInteractionRefs();
+  }, [cameraReady, chainFilter, fitViewNonce, positionCameraToStructure, protein, viewMode, visibleAtoms.length]);
 
   if (!protein) {
     return <div className="viewer-empty">Select a structure to inspect its chains, residues, and guided explanations.</div>;
@@ -537,23 +605,29 @@ export function ProteinViewer({
           className="viewer-shell"
           data-viewer-context-menu="enabled"
           onPointerMove={markInteraction}
-          onPointerDown={markInteraction}
-          onWheel={markInteraction}
         >
-          <Canvas camera={{ position: [0, 0, 16], fov: 40 }} onCreated={(state) => setCamera(state.camera)}>
+          <Canvas
+            camera={{ position: [0, 0, 16], fov: 40 }}
+            onCreated={(state) => {
+              cameraRef.current = state.camera;
+              setAxisCamera(state.camera);
+              setCameraReady(true);
+            }}
+          >
             <color attach="background" args={['#091223']} />
             {sceneSettings.showFog ? <fog attach="fog" args={['#0b1424', Math.max(bounds.radius * 2.2, 12), Math.max(bounds.radius * 5.2, 30)]} /> : null}
             <Suspense fallback={null}>
               <ProteinScene
                 protein={protein}
-                visibleChainIds={visibleChainIds}
+                emphasizedChainIds={emphasizedChainIds}
                 viewMode={viewMode}
                 showAxes={showAxes}
                 showGrid={sceneSettings.showGrid}
                 structureLevel={structureLevel}
                 activeTarget={activeTarget}
                 selectedResidue={selectedResidue}
-                hoveredResidue={hoveredResidue}
+                hoveredResidue={interactionLocked ? null : hoveredResidue}
+                hoverEnabled={!interactionLocked}
                 onResidueHover={onResidueHover}
                 onResidueSelect={onResidueSelect}
               />
@@ -569,13 +643,13 @@ export function ProteinViewer({
                 enablePan
                 enableRotate
                 enableZoom
-                onStart={markInteraction}
+                onStart={beginInteractionLock}
                 onChange={() => {
                   if (!autoOrbitingRef.current) {
                     markInteraction();
                   }
                 }}
-                onEnd={markInteraction}
+                onEnd={endInteractionLock}
                 touches={{
                   ONE: THREE.TOUCH.ROTATE,
                   TWO: THREE.TOUCH.DOLLY_ROTATE,
@@ -592,7 +666,7 @@ export function ProteinViewer({
               <Canvas orthographic camera={{ position: [0, 0, 4], zoom: 80 }}>
                 <ambientLight intensity={0.6} />
                 <directionalLight position={[1, 1, 2]} intensity={0.9} />
-                {camera ? <MiniAxis camera={camera} /> : null}
+                {axisCamera ? <MiniAxis camera={axisCamera} /> : null}
               </Canvas>
             </div>
             <Button variant="outline" size="sm" className="viewer-hud__button" onClick={fitViewToStructure}>
@@ -600,7 +674,7 @@ export function ProteinViewer({
             </Button>
           </div>
 
-          {hoveredResidue ? (
+          {!interactionLocked && hoveredResidue ? (
             <div className="viewer-tooltip">
               <strong>
                 {hoveredResidue.residueName} {hoveredResidue.residueNumber}
@@ -608,21 +682,6 @@ export function ProteinViewer({
               <span>Chain {hoveredResidue.chainId}</span>
             </div>
           ) : null}
-
-          <div className="viewer-hud viewer-hud--bottom-left">
-            <div className="viewer-scale-panel">
-              <div className="viewer-scale-panel__meta">
-                <span className="viewer-scale-panel__title">Scale</span>
-                <span className="viewer-scale-panel__size">{sizeLabel}</span>
-              </div>
-              <div className="viewer-scale-bar__row">
-                <div className="viewer-scale-bar">
-                  <div className="viewer-scale-bar__fill" style={{ width: `${scaleBar.widthPercent}%` }} />
-                </div>
-                <span className="viewer-scale-bar__label">{scaleBar.label}</span>
-              </div>
-            </div>
-          </div>
         </div>
       </ContextMenuTrigger>
 
@@ -640,24 +699,6 @@ export function ProteinViewer({
               <ContextMenuRadioItem value="atoms">Atoms</ContextMenuRadioItem>
               <ContextMenuRadioItem value="backbone">Backbone</ContextMenuRadioItem>
               <ContextMenuRadioItem value="cartoon">Cartoon</ContextMenuRadioItem>
-            </ContextMenuRadioGroup>
-          </ContextMenuSubContent>
-        </ContextMenuSub>
-
-        <ContextMenuSub>
-          <ContextMenuSubTrigger>Grid units</ContextMenuSubTrigger>
-          <ContextMenuSubContent className="w-44 rounded-xl">
-            <ContextMenuRadioGroup
-              value={sceneSettings.unitSystem}
-              onValueChange={(value) =>
-                onSceneSettingsChange((current) => ({
-                  ...current,
-                  unitSystem: value as ViewerSceneSettings['unitSystem'],
-                }))
-              }
-            >
-              <ContextMenuRadioItem value="angstrom">Angstrom (Å)</ContextMenuRadioItem>
-              <ContextMenuRadioItem value="nanometer">Nanometer (nm)</ContextMenuRadioItem>
             </ContextMenuRadioGroup>
           </ContextMenuSubContent>
         </ContextMenuSub>

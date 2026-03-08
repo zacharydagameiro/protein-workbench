@@ -1,4 +1,4 @@
-import { Command, Compass, MoreHorizontal, Search, Sparkles, SunMoon, Trash2 } from 'lucide-react';
+import { Command, Compass, MoreHorizontal, Search, SunMoon, Trash2 } from 'lucide-react';
 import type { Protein, WorkspaceTab } from '../types/structure.js';
 import {
   DropdownMenu,
@@ -27,51 +27,109 @@ import {
 interface AppSidebarProps {
   workspace: WorkspaceTab;
   pinnedProteins: Protein[];
+  inventoryProteins: Protein[];
   historyProteins: Protein[];
-  selectedId: string | null;
-  onSelectProtein: (protein: Protein) => void;
+  selectedSidebarEntryId: string | null;
+  onSelectProtein: (protein: Protein, entryId: string) => void;
   onTogglePinned: (protein: Protein) => void;
+  onToggleInventory: (protein: Protein) => void;
+  onRenameProtein: (
+    protein: Protein,
+    nextName: string,
+    options: { saveToFavorites: boolean; saveToInventory: boolean; updateHistory: boolean },
+  ) => void;
   onRemoveHistory: (proteinId: string) => void;
   onSearch: () => void;
-  onAskAI: () => void;
-  onProteinBankViewer: () => void;
+  onExplore: () => void;
+  onInventory: () => void;
   onClearHistory: () => void;
   onToggleTheme: () => void;
 }
 
 function ProteinShortcutRow({
+  entryId,
+  section,
   protein,
-  selectedId,
+  isFavorite,
+  isInInventory,
+  selectedSidebarEntryId,
   onSelect,
-  actionLabel,
-  onAction,
+  onTogglePinned,
+  onToggleInventory,
+  onRenameProtein,
+  onRemoveHistory,
 }: {
+  entryId: string;
+  section: 'favorite' | 'history' | 'inventory';
   protein: Protein;
-  selectedId: string | null;
-  onSelect: (protein: Protein) => void;
-  actionLabel: string;
-  onAction: (protein: Protein) => void;
+  isFavorite: boolean;
+  isInInventory: boolean;
+  selectedSidebarEntryId: string | null;
+  onSelect: (protein: Protein, entryId: string) => void;
+  onTogglePinned: (protein: Protein) => void;
+  onToggleInventory: (protein: Protein) => void;
+  onRenameProtein: (
+    protein: Protein,
+    nextName: string,
+    options: { saveToFavorites: boolean; saveToInventory: boolean; updateHistory: boolean },
+  ) => void;
+  onRemoveHistory: (proteinId: string) => void;
 }) {
+  const historyActionLabel = section === 'history' ? 'Remove from Recent' : null;
+
   return (
-    <SidebarMenuItem>
+    <SidebarMenuItem className="w-full max-w-full">
       <SidebarMenuButton
-        isActive={selectedId === protein.id}
-        onClick={() => onSelect(protein)}
+        isActive={selectedSidebarEntryId === entryId}
+        className="w-full max-w-full min-w-0 overflow-hidden pr-12"
+        onClick={() => onSelect(protein, entryId)}
         title={`${protein.name ?? protein.metadata.displayTitle} (${protein.metadata.pdbId ?? protein.id.toUpperCase()})`}
       >
         <span className="text-base leading-none">🧬</span>
-        <span className="truncate">{protein.name ?? protein.metadata.displayTitle}</span>
+        <span className="block max-w-[12.5rem] min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap">
+          {protein.name ?? protein.metadata.displayTitle}
+        </span>
       </SidebarMenuButton>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <SidebarMenuAction aria-label={actionLabel}>
+          <SidebarMenuAction
+            aria-label={`More actions for ${protein.name ?? protein.metadata.displayTitle}`}
+            className="right-1 opacity-100"
+          >
             <MoreHorizontal className="h-4 w-4" />
           </SidebarMenuAction>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" side="right" className="w-48 rounded-lg">
-          <DropdownMenuItem onClick={() => onSelect(protein)}>Open in Explorer</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onSelect(protein, entryId)}>Open in Explorer</DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem onClick={() => onAction(protein)}>{actionLabel}</DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onTogglePinned(protein)}>
+            {isFavorite ? 'Remove from Favorites' : 'Add to Favorites'}
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onToggleInventory(protein)}>
+            {isInInventory ? 'Remove from Inventory' : 'Add to Inventory'}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => {
+              const nextName = window.prompt('Rename protein', protein.name ?? protein.metadata.displayTitle);
+              if (!nextName || !nextName.trim()) {
+                return;
+              }
+
+              onRenameProtein(protein, nextName, {
+                saveToFavorites: isFavorite,
+                saveToInventory: isInInventory,
+                updateHistory: section === 'history',
+              });
+            }}
+          >
+            Rename
+          </DropdownMenuItem>
+          {historyActionLabel ? (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={() => onRemoveHistory(protein.id)}>{historyActionLabel}</DropdownMenuItem>
+            </>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
     </SidebarMenuItem>
@@ -81,14 +139,17 @@ function ProteinShortcutRow({
 export function AppSidebar({
   workspace,
   pinnedProteins,
+  inventoryProteins,
   historyProteins,
-  selectedId,
+  selectedSidebarEntryId,
   onSelectProtein,
   onTogglePinned,
+  onToggleInventory,
+  onRenameProtein,
   onRemoveHistory,
   onSearch,
-  onAskAI,
-  onProteinBankViewer,
+  onExplore,
+  onInventory,
   onClearHistory,
   onToggleTheme,
 }: AppSidebarProps) {
@@ -100,10 +161,13 @@ export function AppSidebar({
     }
   };
 
-  const handleSelectProtein = (protein: Protein) => {
-    onSelectProtein(protein);
+  const handleSelectProtein = (protein: Protein, entryId: string) => {
+    onSelectProtein(protein, entryId);
     closeIfMobile();
   };
+
+  const favoriteIds = new Set(pinnedProteins.map((protein) => protein.id));
+  const inventoryIds = new Set(inventoryProteins.map((protein) => protein.id));
 
   const runNav = (callback: () => void) => {
     callback();
@@ -137,25 +201,20 @@ export function AppSidebar({
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton onClick={() => runNav(onAskAI)}>
-                  <Sparkles className="h-4 w-4" />
-                  <span>Ask AI</span>
-                  <span className="ml-auto text-[10px] tracking-[0.12em] text-sidebar-foreground/45">Cmd+K</span>
+                <SidebarMenuButton onClick={() => runNav(onExplore)} isActive={workspace === 'protein-bank'}>
+                  <Compass className="h-4 w-4" />
+                  <span>Explore</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
               <SidebarMenuItem>
-                <SidebarMenuButton onClick={() => runNav(onProteinBankViewer)} isActive={workspace === 'protein-bank'}>
+                <SidebarMenuButton onClick={() => runNav(onInventory)} isActive={workspace === 'inventory'}>
                   <Compass className="h-4 w-4" />
-                  <span>Protein Bank Viewer</span>
+                  <span>Inventory</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-
-        <div className="rounded-2xl border border-sidebar-border/60 bg-sidebar-accent/18 px-3 py-2 text-sm leading-6 text-sidebar-foreground/65">
-          Pinned proteins and history stay available while you move between views.
-        </div>
       </SidebarHeader>
 
       <SidebarContent>
@@ -173,11 +232,17 @@ export function AppSidebar({
                     {pinnedProteins.map((protein) => (
                       <ProteinShortcutRow
                         key={`favorite-${protein.id}`}
+                        entryId={`favorite:${protein.id}`}
+                        section="favorite"
                         protein={protein}
-                        selectedId={selectedId}
+                        isFavorite={favoriteIds.has(protein.id)}
+                        isInInventory={inventoryIds.has(protein.id)}
+                        selectedSidebarEntryId={selectedSidebarEntryId}
                         onSelect={handleSelectProtein}
-                        actionLabel="Remove from Favorites"
-                        onAction={onTogglePinned}
+                        onTogglePinned={onTogglePinned}
+                        onToggleInventory={onToggleInventory}
+                        onRenameProtein={onRenameProtein}
+                        onRemoveHistory={onRemoveHistory}
                       />
                     ))}
                   </SidebarMenu>
@@ -186,7 +251,7 @@ export function AppSidebar({
             </SidebarGroup>
 
             <SidebarGroup>
-              <SidebarGroupLabel>History</SidebarGroupLabel>
+              <SidebarGroupLabel>Recent</SidebarGroupLabel>
               <SidebarGroupContent>
                 {historyProteins.length === 0 ? (
                   <div className="px-2 text-sm leading-6 text-sidebar-foreground/55">Viewed proteins will appear here.</div>
@@ -195,11 +260,17 @@ export function AppSidebar({
                     {historyProteins.map((protein) => (
                       <ProteinShortcutRow
                         key={`history-${protein.id}`}
+                        entryId={`history:${protein.id}`}
+                        section="history"
                         protein={protein}
-                        selectedId={selectedId}
+                        isFavorite={favoriteIds.has(protein.id)}
+                        isInInventory={inventoryIds.has(protein.id)}
+                        selectedSidebarEntryId={selectedSidebarEntryId}
                         onSelect={handleSelectProtein}
-                        actionLabel="Remove from History"
-                        onAction={(entry) => onRemoveHistory(entry.id)}
+                        onTogglePinned={onTogglePinned}
+                        onToggleInventory={onToggleInventory}
+                        onRenameProtein={onRenameProtein}
+                        onRemoveHistory={onRemoveHistory}
                       />
                     ))}
                     <SidebarMenuItem>
@@ -208,6 +279,34 @@ export function AppSidebar({
                         <span>Clear history</span>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
+                  </SidebarMenu>
+                )}
+              </SidebarGroupContent>
+            </SidebarGroup>
+
+            <SidebarGroup>
+              <SidebarGroupLabel>Inventory</SidebarGroupLabel>
+              <SidebarGroupContent>
+                {inventoryProteins.length === 0 ? (
+                  <div className="px-2 text-sm leading-6 text-sidebar-foreground/55">Saved inventory proteins will appear here.</div>
+                ) : (
+                  <SidebarMenu>
+                    {inventoryProteins.map((protein) => (
+                      <ProteinShortcutRow
+                        key={`inventory-${protein.id}`}
+                        entryId={`inventory:${protein.id}`}
+                        section="inventory"
+                        protein={protein}
+                        isFavorite={favoriteIds.has(protein.id)}
+                        isInInventory={inventoryIds.has(protein.id)}
+                        selectedSidebarEntryId={selectedSidebarEntryId}
+                        onSelect={handleSelectProtein}
+                        onTogglePinned={onTogglePinned}
+                        onToggleInventory={onToggleInventory}
+                        onRenameProtein={onRenameProtein}
+                        onRemoveHistory={onRemoveHistory}
+                      />
+                    ))}
                   </SidebarMenu>
                 )}
               </SidebarGroupContent>

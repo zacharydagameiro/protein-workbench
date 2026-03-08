@@ -224,14 +224,14 @@ export const buildVisibleSequenceLanes = ({
   hoveredResidue,
 }: {
   protein: Protein;
-  chainFilter: string;
+  chainFilter: string[];
   sequenceState: SequencePanelState;
   structureLevel: StructureLevel;
   activeTarget?: ViewerTarget | null;
   selectedResidue?: ViewerSelection | null;
   hoveredResidue?: ViewerSelection | null;
 }): SequenceTrackLane[] => {
-  const visibleChains = chainFilter === 'all' ? protein.chains : protein.chains.filter((chain) => chain.id === chainFilter);
+  const visibleChains = chainFilter.length === 0 ? protein.chains : protein.chains.filter((chain) => chainFilter.includes(chain.id));
 
   return visibleChains.map((chain) => ({
     chain,

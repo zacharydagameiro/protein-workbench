@@ -1,12 +1,12 @@
 import type { Protein, StructureMetadata } from '../types/structure.js';
 
 const HISTORY_KEY = 'protein-workbench-history-v1';
-const PINNED_KEY = 'protein-workbench-pinned-v1';
 const MAX_HISTORY_ITEMS = 12;
 
 export interface LibraryState {
   history: Protein[];
   pinned: Protein[];
+  inventory: Protein[];
 }
 
 const normalizeStoredProtein = (value: unknown): Protein | null => {
@@ -89,7 +89,8 @@ const upsertProtein = (proteins: Protein[], protein: Protein, limit?: number): P
 
 export const getLibraryState = (): LibraryState => ({
   history: loadProteins(HISTORY_KEY),
-  pinned: loadProteins(PINNED_KEY),
+  pinned: [],
+  inventory: [],
 });
 
 export const saveHistoryItem = (protein: Protein): Protein[] => {
@@ -104,14 +105,29 @@ export const removeHistoryItem = (id: string): Protein[] => {
   return history;
 };
 
-export const togglePinnedProtein = (protein: Protein): Protein[] => {
-  const pinned = loadProteins(PINNED_KEY);
-  const next = pinned.some((item) => item.id === protein.id)
-    ? pinned.filter((item) => item.id !== protein.id)
-    : upsertProtein(pinned, protein);
+export const renameHistoryItem = (id: string, nextName: string): Protein[] => {
+  const trimmedName = nextName.trim();
+  if (!trimmedName) {
+    return loadProteins(HISTORY_KEY);
+  }
 
-  saveProteins(PINNED_KEY, next);
-  return next;
+  const history = loadProteins(HISTORY_KEY).map((protein) =>
+    protein.id === id
+      ? {
+          ...protein,
+          name: trimmedName,
+          metadata: {
+            ...protein.metadata,
+            title: trimmedName,
+            displayTitle: trimmedName,
+            moleculeName: trimmedName,
+          },
+        }
+      : protein,
+  );
+
+  saveProteins(HISTORY_KEY, history);
+  return history;
 };
 
 export const clearLibrarySection = (section: keyof LibraryState): LibraryState => {
@@ -119,8 +135,8 @@ export const clearLibrarySection = (section: keyof LibraryState): LibraryState =
     case 'history':
       localStorage.removeItem(HISTORY_KEY);
       break;
+    case 'inventory':
     case 'pinned':
-      localStorage.removeItem(PINNED_KEY);
       break;
   }
 

@@ -20,7 +20,7 @@ import type {
 
 interface ExplorerSidepanelProps {
   protein: Protein | null;
-  chainFilter: string;
+  chainFilter: string[];
   activeTab: InspectorTab;
   structureLevel: StructureLevel;
   sequenceState: SequencePanelState;
@@ -310,23 +310,20 @@ function SequenceResidueDetail({
   sequenceState,
   activeTarget,
   selectedResidue,
-  hoveredResidue,
   onTargetSelect,
 }: {
   protein: Protein;
-  chainFilter: string;
+  chainFilter: string[];
   sequenceState: SequencePanelState;
   activeTarget?: ViewerTarget | null;
   selectedResidue?: ViewerSelection | null;
-  hoveredResidue?: ViewerSelection | null;
   onTargetSelect: (target: ViewerTarget, options?: { tab?: InspectorTab }) => void;
 }) {
   const fallbackResidue =
-    protein.chains.find((chain) => chain.id === (chainFilter === 'all' ? sequenceState.activeChainId : chainFilter))?.residues[0] ??
-    protein.chains.find((chain) => chainFilter === 'all' || chain.id === chainFilter)?.residues[0];
+    protein.chains.find((chain) => chain.id === (chainFilter.length === 0 ? sequenceState.activeChainId : chainFilter[0]))?.residues[0] ??
+    protein.chains.find((chain) => chainFilter.length === 0 || chainFilter.includes(chain.id))?.residues[0];
   const focus =
     selectedResidue ??
-    hoveredResidue ??
     getTargetedResidue(activeTarget ?? null) ??
     (fallbackResidue
       ? {
@@ -468,11 +465,11 @@ export function ExplorerSidepanel({
     );
   }
 
-  const visibleChains = chainFilter === 'all' ? protein.chains : protein.chains.filter((chain) => chain.id === chainFilter);
+  const visibleChains = chainFilter.length === 0 ? protein.chains : protein.chains.filter((chain) => chainFilter.includes(chain.id));
   const currentResidue =
-    selectedResidue ?? hoveredResidue ?? getTargetedResidue(activeTarget ?? null) ?? findResidueById(protein, sequenceState.focusedResidueId);
+    selectedResidue ?? getTargetedResidue(activeTarget ?? null) ?? findResidueById(protein, sequenceState.focusedResidueId);
   const structureCopy = getStructureLevelDescription(protein, structureLevel);
-  const structureRegions = protein.regions.filter((region) => chainFilter === 'all' || region.chainId === chainFilter);
+  const structureRegions = protein.regions.filter((region) => chainFilter.length === 0 || chainFilter.includes(region.chainId));
 
   return (
     <Card className="flex h-full min-h-0 flex-col overflow-hidden bg-card/94">
@@ -616,7 +613,6 @@ export function ExplorerSidepanel({
                   sequenceState={sequenceState}
                   activeTarget={activeTarget}
                   selectedResidue={selectedResidue}
-                  hoveredResidue={hoveredResidue}
                   onTargetSelect={onTargetSelect}
                 />
               </div>

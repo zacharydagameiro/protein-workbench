@@ -1,4 +1,4 @@
-import type { Atom, ViewerUnitSystem } from '../types/structure.js';
+import type { Atom } from '../types/structure.js';
 
 export interface StructureBounds {
   center: { x: number; y: number; z: number };
@@ -6,15 +6,6 @@ export interface StructureBounds {
   radius: number;
   maxDimension: number;
 }
-
-export interface ScaleBarDisplay {
-  angstroms: number;
-  label: string;
-  unit: 'Å' | 'nm';
-  widthPercent: number;
-}
-
-const clamp = (value: number, min: number, max: number): number => Math.min(Math.max(value, min), max);
 
 export const getStructureBounds = (atoms: Atom[]): StructureBounds => {
   if (atoms.length === 0) {
@@ -75,36 +66,4 @@ export const getFittedCameraDistance = (
   const distanceForWidth = halfWidth / (safeAspect * Math.tan(fovRadians / 2));
 
   return Math.max(distanceForHeight, distanceForWidth, bounds.radius * 1.35, bounds.size.z * 1.2 + 2) * padding;
-};
-
-export const convertAngstroms = (angstroms: number, unitSystem: ViewerUnitSystem): number =>
-  unitSystem === 'nanometer' ? angstroms / 10 : angstroms;
-
-export const formatUnitValue = (angstroms: number, unitSystem: ViewerUnitSystem, fractionDigits = 1): string => {
-  const value = convertAngstroms(angstroms, unitSystem);
-  const unit = unitSystem === 'nanometer' ? 'nm' : 'Å';
-  return `${value.toFixed(fractionDigits)} ${unit}`;
-};
-
-export const getBoundsSizeLabel = (bounds: StructureBounds, unitSystem: ViewerUnitSystem): string =>
-  `${formatUnitValue(bounds.size.x, unitSystem)} × ${formatUnitValue(bounds.size.y, unitSystem)} × ${formatUnitValue(bounds.size.z, unitSystem)}`;
-
-export const getScaleBarDisplay = (bounds: StructureBounds, unitSystem: ViewerUnitSystem): ScaleBarDisplay => {
-  const presets = unitSystem === 'nanometer' ? [0.5, 1, 2, 5, 10] : [2, 5, 10, 20, 50, 100];
-  const maxDimensionInUnits = convertAngstroms(bounds.maxDimension, unitSystem);
-  const target = maxDimensionInUnits * 0.28;
-  let selected = presets[0];
-  for (const preset of presets) {
-    if (preset <= target) {
-      selected = preset;
-    }
-  }
-  const selectedAngstroms = unitSystem === 'nanometer' ? selected * 10 : selected;
-
-  return {
-    angstroms: selectedAngstroms,
-    label: `${selected} ${unitSystem === 'nanometer' ? 'nm' : 'Å'}`,
-    unit: unitSystem === 'nanometer' ? 'nm' : 'Å',
-    widthPercent: clamp((selectedAngstroms / Math.max(bounds.maxDimension, 1)) * 100, 14, 38),
-  };
 };

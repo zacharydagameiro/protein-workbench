@@ -1,4 +1,5 @@
 import { fetchProteinAnnotations } from './annotationService.js';
+import { getFirestoreProteinByPdbId, mergeKnownProteinsFromFirestore, mergeProteinWithFirestore, searchFirestoreProteins } from './firebaseProteinService.js';
 import { mergeStructureMetadata, fetchStructureMetadata } from './metadataService.js';
 import { pdbToProtein } from './pdbParser.js';
 import { enrichProteinForExplorer } from '../utils/explorerContent.js';
@@ -54,6 +55,7 @@ export const loadProteinById = async (pdbId: string): Promise<Protein> => {
   }
 
   protein = enrichProteinForExplorer(protein);
+  protein = mergeProteinWithFirestore(protein, await getFirestoreProteinByPdbId(normalizedId));
 
   structureCache.set(normalizedId, protein);
   return protein;
@@ -97,10 +99,22 @@ export const searchPDB = async (query: string): Promise<string[]> => {
 };
 
 export const searchAndLoadProteins = async (query: string): Promise<Protein[]> => {
+  const firestoreMatches = await searchFirestoreProteins(query);
+  if (firestoreMatches.length > 0) {
+    const firebaseResults = await Promise.allSettled(
+      firestoreMatches.map((record) => loadProteinById(record.pdbIdUpper ?? record.pdbId ?? record.id)),
+    );
+
+    return firebaseResults
+      .filter((result): result is PromiseFulfilledResult<Protein> => result.status === 'fulfilled')
+      .map((result) => result.value);
+  }
+
   const ids = await searchPDB(query);
   const results = await Promise.allSettled(ids.map((id) => loadProteinById(id)));
-
-  return results
+  const proteins = results
     .filter((result): result is PromiseFulfilledResult<Protein> => result.status === 'fulfilled')
     .map((result) => result.value);
+
+  return mergeKnownProteinsFromFirestore(proteins);
 };
