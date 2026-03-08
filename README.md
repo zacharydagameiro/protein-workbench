@@ -23,14 +23,14 @@ A modern 3D interactive web application for visualizing genes, proteins, and mol
 
 ### Prerequisites
 
-- Node.js (v20.18.2 or higher recommended)
+- Node.js (v20.19.0 or higher recommended)
 - npm
 
 ### Installation
 
 1. Navigate to the project directory:
 ```bash
-cd /Users/zacharygameiro/bio/genest-3d-app
+cd /Users/zacharygameiro/portfolio/protein-workbench
 ```
 
 2. Install dependencies (if not already done):
@@ -46,7 +46,7 @@ Start the development server:
 npm run dev
 ```
 
-The app will be available at `http://localhost:5173` (or the port shown in your terminal).
+The app will be available at `http://localhost:5174` (or the port shown in your terminal).
 
 ### Building for Production
 
@@ -55,6 +55,17 @@ npm run build
 ```
 
 The built files will be in the `dist` directory.
+
+## GitHub Pages Deployment
+
+This project includes a GitHub Actions workflow that deploys the Vite build to GitHub Pages.
+
+1. Push this repository to GitHub.
+2. In GitHub, open `Settings` -> `Pages`.
+3. Set the source to `GitHub Actions`.
+4. Push to the `main` branch to trigger deployment.
+
+The Vite config uses a relative asset base, so the site will work on GitHub Pages without hard-coding the repository name.
 
 ## Project Structure
 
